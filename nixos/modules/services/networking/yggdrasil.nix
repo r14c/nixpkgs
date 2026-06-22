@@ -46,10 +46,14 @@ let
     );
 
   # Remove null values that yggdrasil doesn't expect
-  cleanSettings = lib.filterAttrs (n: v: v != null) baseSettings;
+  cleanSettings = lib.filterAttrs (_: v: v != null) baseSettings;
 
   # Generate configuration file from user settings
-  configFile = pkgs.writers.writeJSON "yggdrasil.conf" cleanSettings;
+  configFile =
+    if cfg.configFile == null then
+      pkgs.writers.writeJSON "yggdrasil.conf" cleanSettings
+    else
+      cfg.configFile;
 in
 {
   imports = [
@@ -62,6 +66,11 @@ in
   options = {
     services.yggdrasil = {
       enable = lib.mkEnableOption "the yggdrasil system service";
+
+      configFile = mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+      };
 
       settings = mkOption {
         type = submodule {
@@ -246,6 +255,13 @@ in
             are mutually exclusive. Use only one of them.
           '';
         }
+        {
+          assertion = !(cfg.settings != { } && cfg.configFile != null);
+          message = ''
+            services.yggdrasil.settings and services.yggdrasil.configFile are
+            mutually exclusive. Use only one of them.
+          '';
+        }
       ];
 
       # One-shot service to generate or migrate persistent keys
@@ -312,7 +328,7 @@ in
         wantedBy = [ "multi-user.target" ];
 
         script =
-          if cfg.settings != { } || cfg.persistentKeys then
+          if cfg.settings != { } || cfg.persistentKeys || cfg.configFile != null then
             # Use user settings or persistent keys configuration
             "exec ${binYggdrasil} -useconffile ${configFile} ${lib.strings.escapeShellArgs cfg.extraArgs}"
           else
